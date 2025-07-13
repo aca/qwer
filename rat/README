@@ -1,0 +1,6 @@
+rat
+===
+
+Alternative API for rational arithmetic. Wrapper arround math.Rat.
+
+	rat.Rat("0.1").Add("1/10", "0.1").Equal(rat.Rat("0.3")) // true
