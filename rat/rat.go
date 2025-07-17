@@ -29,17 +29,18 @@ func RatMin(first any, args ...any) *Rational {
 	return out
 }
 
-func RatMax(first *Rational, args ...*Rational) *Rational {
+func RatMax(first any, args ...any) *Rational {
+	firstrat := Rat(first)
 	if len(args) == 0 {
-		return first
+		return firstrat
 	}
-	ret := first.Clone()
+	out := firstrat.Clone()
 	for _, arg := range args {
-		if ret.Less(arg) {
-			ret.Set(arg)
+		if out.Less(arg) {
+			out.Set(Rat(arg))
 		}
 	}
-	return ret
+	return out
 }
 
 func Rat(v any) *Rational {
@@ -73,33 +74,63 @@ func (r *Rational) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (r *Rational) Int() int {
+	return r.FloorInt()
+}
+
 func (r *Rational) FloorInt() int {
-	// Optimize: use big.Rat methods directly instead of string conversion
-	if r.bigrat.IsInt() {
-		// For integers, convert directly
-		f, _ := r.bigrat.Float64()
-		return int(f)
+	// Floor function: rounds DOWN to the nearest integer
+	// Examples:
+	//   floor(3.7) = 3      (rounds down)
+	//   floor(3.0) = 3      (already integer)
+	//   floor(-3.7) = -4    (rounds down, NOT -3!)
+	//   floor(-3.0) = -3    (already integer)
+	
+	// IMPORTANT: We cannot use float64 conversion because it loses precision!
+	// Example: -3.000000000000000000001 would become -3.0 in float64,
+	// giving us floor(-3.0) = -3, but the correct answer is -4!
+	
+	// Step 1: Get the numerator and denominator of our rational number
+	// If we have -3.1, it's stored as -31/10
+	num := r.bigrat.Num()      // numerator (-31)
+	denom := r.bigrat.Denom()   // denominator (10)
+	
+	// Step 2: Do integer division (this truncates towards zero)
+	// -31 ÷ 10 = -3 (remainder -1, but Go's Div ignores remainder)
+	// This is NOT floor yet! It's truncation.
+	quotient := new(big.Int)
+	quotient.Div(num, denom)
+	
+	// Step 3: Check if there was a remainder
+	// We do this by calculating: quotient × denominator
+	// If this equals numerator, there was no remainder
+	temp := new(big.Int)
+	temp.Mul(quotient, denom)  // -3 × 10 = -30
+	
+	// Step 4: Compare original with our multiplication result
+	// If num < temp, we have a negative number with a remainder
+	// Example: -31 < -30, so -3.1 had a remainder
+	if num.Cmp(temp) < 0 {
+		// For negative numbers with ANY remainder (even tiny ones),
+		// we must subtract 1 to get the floor
+		// -3 - 1 = -4, which is floor(-3.1)
+		quotient.Sub(quotient, big.NewInt(1))
 	}
+	// Note: For positive numbers, truncation = floor, so no adjustment needed
+	// For exact integers (no remainder), no adjustment needed
 	
-	// For non-integers, we need proper floor division
-	// The issue is that big.Int.Div truncates towards zero, not towards negative infinity
-	
-	// Simple approach: use the mathematical definition
-	// Floor(x) = x - (x mod 1) if x >= 0
-	// Floor(x) = x - (x mod 1) - 1 if x < 0 and (x mod 1) != 0
-	
-	f, _ := r.bigrat.Float64()
-	if f >= 0 {
-		return int(f) // For positive numbers, truncation equals floor
-	} else {
-		// For negative numbers, check if there's a fractional part
-		truncated := int(f)
-		if float64(truncated) == f {
-			return truncated // It's exactly an integer
-		} else {
-			return truncated - 1 // Floor of negative non-integer
-		}
-	}
+	// Step 5: Convert our big.Int result to regular int
+	// WARNING: This can overflow in several ways:
+	// 1. If quotient > MaxInt64, Int64() returns MaxInt64 (incorrect)
+	// 2. If quotient < MinInt64, Int64() returns MinInt64 (incorrect)  
+	// 3. On 32-bit systems, int(int64) can overflow if value > MaxInt32
+	//
+	// For most practical uses, the result should fit in an int.
+	// If you need to handle very large numbers, consider using:
+	// - A method that returns *big.Int directly
+	// - A method that returns (int, bool) where bool indicates overflow
+	// - Checking quotient.IsInt64() before conversion
+	return int(quotient.Int64())
 }
 
 func (r *Rational) IntString() string {
@@ -123,7 +154,8 @@ func (r *Rational) Floor() *Rational {
 	if r.bigrat.IsInt() {
 		return r.Clone()
 	} else {
-		// TODO: fix this, math.ceil should be math.cel(-7.004) should be -7
+		// For non-integers, return the floor as a Rational
+		// Example: floor(-7.004) = -8 (rounds down toward negative infinity)
 		return Rat(r.FloorInt())
 	}
 }
@@ -140,6 +172,14 @@ func (r *Rational) Sub(ins ...any) *Rational {
 		switch v := in.(type) {
 		case int:
 			// Optimize: convert int directly to big.Rat without creating Rational
+			var temp big.Rat
+			temp.SetInt64(int64(v))
+			out.bigrat.Sub(&out.bigrat, &temp)
+		case int8:
+			var temp big.Rat
+			temp.SetInt64(int64(v))
+			out.bigrat.Sub(&out.bigrat, &temp)
+		case int16:
 			var temp big.Rat
 			temp.SetInt64(int64(v))
 			out.bigrat.Sub(&out.bigrat, &temp)
@@ -178,6 +218,14 @@ func (r *Rational) Add(ins ...any) *Rational {
 		switch v := in.(type) {
 		case int:
 			// Optimize: convert int directly to big.Rat without creating Rational
+			var temp big.Rat
+			temp.SetInt64(int64(v))
+			out.bigrat.Add(&out.bigrat, &temp)
+		case int8:
+			var temp big.Rat
+			temp.SetInt64(int64(v))
+			out.bigrat.Add(&out.bigrat, &temp)
+		case int16:
 			var temp big.Rat
 			temp.SetInt64(int64(v))
 			out.bigrat.Add(&out.bigrat, &temp)
@@ -220,21 +268,40 @@ func (r *Rational) Mul(in any) *Rational {
 
 	switch v := in.(type) {
 	case int:
-		out.bigrat.Mul(&r.bigrat, &Rat(v).bigrat)
+		// Optimize: convert int directly to big.Rat without creating Rational
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Mul(&out.bigrat, &temp)
+	case int8:
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Mul(&out.bigrat, &temp)
+	case int16:
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Mul(&out.bigrat, &temp)
 	case int32:
-		out.bigrat.Mul(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Mul(&out.bigrat, &temp)
 	case int64:
-		out.bigrat.Mul(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetInt64(v)
+		out.bigrat.Mul(&out.bigrat, &temp)
 	case float32:
-		out.bigrat.Mul(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetFloat64(float64(v))
+		out.bigrat.Mul(&out.bigrat, &temp)
 	case float64:
-		out.bigrat.Mul(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetFloat64(v)
+		out.bigrat.Mul(&out.bigrat, &temp)
 	case string:
-		out.bigrat.Mul(&r.bigrat, &Rat(v).bigrat)
+		out.bigrat.Mul(&out.bigrat, &Rat(v).bigrat)
 	case *Rational:
-		out.bigrat.Mul(&r.bigrat, &v.bigrat)
+		out.bigrat.Mul(&out.bigrat, &v.bigrat)
 	default:
-		panic("rat: add invalid type")
+		panic("rat: mul invalid type")
 	}
 	return out
 }
@@ -244,21 +311,40 @@ func (r *Rational) Quo(in any) *Rational {
 
 	switch v := in.(type) {
 	case int:
-		out.bigrat.Quo(&r.bigrat, &Rat(v).bigrat)
+		// Optimize: convert int directly to big.Rat without creating Rational
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Quo(&out.bigrat, &temp)
+	case int8:
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Quo(&out.bigrat, &temp)
+	case int16:
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Quo(&out.bigrat, &temp)
 	case int32:
-		out.bigrat.Quo(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetInt64(int64(v))
+		out.bigrat.Quo(&out.bigrat, &temp)
 	case int64:
-		out.bigrat.Quo(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetInt64(v)
+		out.bigrat.Quo(&out.bigrat, &temp)
 	case float32:
-		out.bigrat.Quo(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetFloat64(float64(v))
+		out.bigrat.Quo(&out.bigrat, &temp)
 	case float64:
-		out.bigrat.Quo(&r.bigrat, &Rat(v).bigrat)
+		var temp big.Rat
+		temp.SetFloat64(v)
+		out.bigrat.Quo(&out.bigrat, &temp)
 	case string:
-		out.bigrat.Quo(&r.bigrat, &Rat(v).bigrat)
+		out.bigrat.Quo(&out.bigrat, &Rat(v).bigrat)
 	case *Rational:
-		out.bigrat.Quo(&r.bigrat, &v.bigrat)
+		out.bigrat.Quo(&out.bigrat, &v.bigrat)
 	default:
-		panic("rat: add invalid type")
+		panic("rat: quo invalid type")
 	}
 	return out
 }
@@ -268,7 +354,7 @@ func (r *Rational) PowInt(exp int) *Rational {
 		// Any number to the power of 0 is 1
 		return Rat(1)
 	}
-	
+
 	// Optimize: use exponentiation by squaring for better performance
 	if exp < 0 {
 		// For negative exponents, calculate 1 / (r^|exp|)
@@ -276,7 +362,7 @@ func (r *Rational) PowInt(exp int) *Rational {
 		one := Rat(1)
 		return one.Quo(posResult)
 	}
-	
+
 	return r.powIntPositive(exp)
 }
 
@@ -285,10 +371,10 @@ func (r *Rational) powIntPositive(exp int) *Rational {
 	if exp == 1 {
 		return r.Clone()
 	}
-	
+
 	result := Rat(1)
 	base := r.Clone()
-	
+
 	// Binary exponentiation: O(log n) instead of O(n)
 	for exp > 0 {
 		if exp%2 == 1 {
@@ -297,7 +383,7 @@ func (r *Rational) powIntPositive(exp int) *Rational {
 		base = base.Mul(base)
 		exp /= 2
 	}
-	
+
 	return result
 }
 
@@ -323,25 +409,7 @@ func (r *Rational) Clone() *Rational {
 }
 
 func (r *Rational) Less(in any) bool {
-	inrat := new(Rational)
-	switch v := in.(type) {
-	case int:
-		inrat = Rat(v)
-	case int8:
-		inrat = Rat(v)
-	case int32:
-		inrat = Rat(v)
-	case int64:
-		inrat = Rat(v)
-	case float32:
-		inrat = Rat(v)
-	case float64:
-		inrat = Rat(v)
-	case string:
-		inrat = Rat(v)
-	case *Rational:
-		inrat = v
-	}
+	inrat := Rat(in)
 
 	if r.bigrat.Cmp(&inrat.bigrat) == -1 {
 		return true
@@ -350,25 +418,7 @@ func (r *Rational) Less(in any) bool {
 }
 
 func (r *Rational) Greater(in any) bool {
-	inrat := new(Rational)
-	switch v := in.(type) {
-	case int:
-		inrat = Rat(v)
-	case int8:
-		inrat = Rat(v)
-	case int32:
-		inrat = Rat(v)
-	case int64:
-		inrat = Rat(v)
-	case float32:
-		inrat = Rat(v)
-	case float64:
-		inrat = Rat(v)
-	case string:
-		inrat = Rat(v)
-	case *Rational:
-		inrat = v
-	}
+	inrat := Rat(in)
 
 	if r.bigrat.Cmp(&inrat.bigrat) == 1 {
 		return true
@@ -376,35 +426,17 @@ func (r *Rational) Greater(in any) bool {
 	return false
 }
 
-func (r *Rational) Cmp(b *Rational) int {
-	return r.bigrat.Cmp(&b.bigrat)
+func (r *Rational) Cmp(b any) int {
+	br := Rat(b)
+	return r.bigrat.Cmp(&br.bigrat)
 }
 
 func (r *Rational) Equal(in any) bool {
-	inrat := new(Rational)
-	switch v := in.(type) {
-	case int:
-		inrat = Rat(v)
-	case int8:
-		inrat = Rat(v)
-	case int32:
-		inrat = Rat(v)
-	case int64:
-		inrat = Rat(v)
-	case float32:
-		inrat = Rat(v)
-	case float64:
-		inrat = Rat(v)
-	case string:
-		inrat = Rat(v)
-	case *Rational:
-		inrat = v
+	inrat := Rat(in)
+	if inrat == nil {
+		return false
 	}
-
-	if r.bigrat.Cmp(&inrat.bigrat) == 0 {
-		return true
-	}
-	return false
+	return r.bigrat.Cmp(&inrat.bigrat) == 0
 }
 
 func (r *Rational) SetPrecision(v int) *Rational {
@@ -412,24 +444,25 @@ func (r *Rational) SetPrecision(v int) *Rational {
 	return r
 }
 
-func RatQuo(a *Rational, b *Rational) *Rational {
-	return a.Quo(b)
+func RatQuo(a any, b any) *Rational {
+	return Rat(a).Quo(b)
 }
 
-func RatMul(a *Rational, b *Rational) *Rational {
-	return a.Mul(b)
+func RatMul(a any, b *Rational) *Rational {
+	return Rat(a).Mul(b)
 }
 
-func RatAdd(a *Rational, b *Rational) *Rational {
-	return a.Add(b)
+func RatAdd(a any, b *Rational) *Rational {
+	return Rat(a).Add(b)
 }
 
-func RatNeg(a *Rational) *Rational {
+func RatNeg(a any) *Rational {
+	ra := Rat(a)
 	c := big.Rat{}
-	c.Neg(&a.bigrat)
+	c.Neg(&ra.bigrat)
 	return &Rational{
 		bigrat:    c,
-		precision: a.precision,
+		precision: ra.precision,
 	}
 }
 

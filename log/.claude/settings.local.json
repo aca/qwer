@@ -1,11 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "Bash(go:*)",
       "Bash(grep:*)",
-      "Bash(go test:*)",
-      "Bash(find:*)",
-      "Bash(ls:*)",
-      "Bash(go run:*)",
       "Bash(rm:*)"
     ],
     "deny": []
