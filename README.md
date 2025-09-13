@@ -2,7 +2,7 @@
 
 Markdown defined command runner alternative to make, just, xc.
 
-# rationale
+## rationale
 
 I needed simple command runner that just works out of the box.
 There's several options out there that tries to replace old "make".
@@ -14,7 +14,7 @@ There's several options out there that tries to replace old "make".
 [xc](https://github.com/joerdav/xc)
 - it uses markdown, but limited to read README.md only, doesn't support other than 'sh'
 
-## Usage
+## usage
 
 Given qwer.md
 
