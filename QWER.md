@@ -2,26 +2,21 @@
 
 This is the QWER.md file with custom commands.
 
-## hello
+## echo
 ```
-echo "Hello from QWER.md!"
-```
-
-## test
-```
-echo "Running tests from QWER.md"
-go test -v ./...
+echo echo "$@"
 ```
 
-## version
+## echo2
+script can be written in any language supported by shebang
 ```
-#!/usr/bin/env bash
-echo "QWER Command Runner"
-echo "File: QWER.md"
-echo "Arguments: $@"
+#!/usr/bin/env -S deno run -A
+console.log("echo2", Deno.args);
 ```
 
-## date
+### sub
+this provides subcommand `echo2 sub`
 ```
-date '+%Y-%m-%d %H:%M:%S'
+#!/usr/bin/env -S deno run -A
+console.log("echosub", Deno.args);
 ```
