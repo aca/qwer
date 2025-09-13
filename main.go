@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -163,6 +164,45 @@ func executeCommand(code string, extraArgs []string) error {
 	return cmd.Run()
 }
 
+func findCommandFile() (string, error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("unable to get current directory: %w", err)
+	}
+
+	// Start from current directory and walk up
+	dir := currentDir
+	for {
+		// Check for QWER.md first, then qwer.md
+		qwerPath := filepath.Join(dir, "QWER.md")
+		if _, err := os.Stat(qwerPath); err == nil {
+			return qwerPath, nil
+		}
+
+		qwerLowerPath := filepath.Join(dir, "qwer.md")
+		if _, err := os.Stat(qwerLowerPath); err == nil {
+			return qwerLowerPath, nil
+		}
+
+		// Check if we've reached the git root
+		gitPath := filepath.Join(dir, ".git")
+		if _, err := os.Stat(gitPath); err == nil {
+			// Found .git directory, stop searching here
+			break
+		}
+
+		// Move to parent directory
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root
+			break
+		}
+		dir = parent
+	}
+
+	return "", fmt.Errorf("no command file found (QWER.md or qwer.md) in current directory or parent directories up to .git")
+}
+
 func listCommands(cmd *Command, prefix string) {
 	for name, child := range cmd.Children {
 		fullPath := prefix
@@ -201,7 +241,6 @@ func main() {
 		fmt.Println("\nDefault file priority:")
 		fmt.Println("  1. QWER.md")
 		fmt.Println("  2. qwer.md")
-		fmt.Println("  3. README.md")
 		fmt.Println("\nFlags:")
 		pflag.PrintDefaults()
 		fmt.Println("\nExamples:")
@@ -217,13 +256,12 @@ func main() {
 	if *fileFlag != "" {
 		markdownFile = *fileFlag
 	} else {
-		// Try QWER.md first, then qwer.md, then fallback to README.md
-		if _, err := os.Stat("QWER.md"); err == nil {
-			markdownFile = "QWER.md"
-		} else if _, err := os.Stat("qwer.md"); err == nil {
-			markdownFile = "qwer.md"
-		} else {
-			markdownFile = "README.md"
+		// Search for QWER.md or qwer.md recursively up to .git directory
+		var err error
+		markdownFile, err = findCommandFile()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 	}
 
