@@ -130,7 +130,7 @@ func executeCommand(code string, extraArgs []string) error {
 	}
 
 	// Create temp file
-	tmpFile, err := os.CreateTemp("", "mdrun-*.sh")
+	tmpFile, err := os.CreateTemp("", "qwer-*.sh")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -234,20 +234,20 @@ func main() {
 	if *helpFlag {
 		fmt.Println("Markdown Command Runner")
 		fmt.Println("\nUsage:")
-		fmt.Println("  mdrun [command] [subcommand...]         Run a command")
-		fmt.Println("  mdrun [command] -- [args...]            Run command with arguments")
-		fmt.Println("  mdrun --list                             List all available commands")
-		fmt.Println("  mdrun --file FILE [command]              Use a specific markdown file")
+		fmt.Println("  qwer [command] [subcommand...]         Run a command")
+		fmt.Println("  qwer [command] -- [args...]            Run command with arguments")
+		fmt.Println("  qwer --list                             List all available commands")
+		fmt.Println("  qwer --file FILE [command]              Use a specific markdown file")
 		fmt.Println("\nDefault file priority:")
 		fmt.Println("  1. QWER.md")
 		fmt.Println("  2. qwer.md")
 		fmt.Println("\nFlags:")
 		pflag.PrintDefaults()
 		fmt.Println("\nExamples:")
-		fmt.Println("  mdrun hello world")
-		fmt.Println("  mdrun test -- --verbose")
-		fmt.Println("  mdrun scripts bash -- arg1 arg2")
-		fmt.Println("  mdrun --file docs.md build")
+		fmt.Println("  qwer hello world")
+		fmt.Println("  qwer test -- --verbose")
+		fmt.Println("  qwer scripts bash -- arg1 arg2")
+		fmt.Println("  qwer --file docs.md build")
 		os.Exit(0)
 	}
 
