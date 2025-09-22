@@ -164,31 +164,33 @@ func executeCommand(code string, extraArgs []string) error {
 	return cmd.Run()
 }
 
-func findCommandFile() (string, error) {
+func findAllCommandFiles() ([]string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("unable to get current directory: %w", err)
+		return nil, fmt.Errorf("unable to get current directory: %w", err)
 	}
 
-	// Start from current directory and walk up
+	var qwerFiles []string
 	dir := currentDir
+
+	// Find all qwer.md files from current directory up to git root
 	for {
 		// Check for QWER.md first, then qwer.md
 		qwerPath := filepath.Join(dir, "QWER.md")
 		if _, err := os.Stat(qwerPath); err == nil {
-			return qwerPath, nil
+			qwerFiles = append(qwerFiles, qwerPath)
+		} else {
+			qwerLowerPath := filepath.Join(dir, "qwer.md")
+			if _, err := os.Stat(qwerLowerPath); err == nil {
+				qwerFiles = append(qwerFiles, qwerLowerPath)
+			}
 		}
 
-		qwerLowerPath := filepath.Join(dir, "qwer.md")
-		if _, err := os.Stat(qwerLowerPath); err == nil {
-			return qwerLowerPath, nil
-		}
-
-		// Check if we've reached the git root
+		// Check if we've reached a git root
 		gitPath := filepath.Join(dir, ".git")
 		if _, err := os.Stat(gitPath); err == nil {
-			// Found .git directory, stop searching here
-			break
+			// Found .git directory, but continue searching parent directories
+			// in case we're in a nested git repository
 		}
 
 		// Move to parent directory
@@ -197,10 +199,54 @@ func findCommandFile() (string, error) {
 			// Reached filesystem root
 			break
 		}
+
+		// Check if parent directory is also a git repo
+		parentGitPath := filepath.Join(parent, ".git")
+		if _, err := os.Stat(parentGitPath); err == nil {
+			// Parent is a git repo, check for qwer.md there too
+			parentQwerPath := filepath.Join(parent, "QWER.md")
+			if _, err := os.Stat(parentQwerPath); err == nil {
+				qwerFiles = append(qwerFiles, parentQwerPath)
+			} else {
+				parentQwerLowerPath := filepath.Join(parent, "qwer.md")
+				if _, err := os.Stat(parentQwerLowerPath); err == nil {
+					qwerFiles = append(qwerFiles, parentQwerLowerPath)
+				}
+			}
+			// Stop after checking parent git repo
+			break
+		}
+
 		dir = parent
 	}
 
-	return "", fmt.Errorf("no command file found (QWER.md or qwer.md) in current directory or parent directories up to .git")
+	if len(qwerFiles) == 0 {
+		return nil, fmt.Errorf("no command file found (QWER.md or qwer.md) in current directory or parent directories")
+	}
+
+	// Reverse the slice so parent files come first
+	for i, j := 0, len(qwerFiles)-1; i < j; i, j = i+1, j-1 {
+		qwerFiles[i], qwerFiles[j] = qwerFiles[j], qwerFiles[i]
+	}
+
+	return qwerFiles, nil
+}
+
+func mergeCommands(parent, child *Command) {
+	// Merge child commands into parent, child commands override parent commands
+	for name, childCmd := range child.Children {
+		if parentCmd, exists := parent.Children[name]; exists {
+			// If command exists in parent, merge recursively
+			// Child's code overrides parent's code if present
+			if childCmd.Code != "" {
+				parentCmd.Code = childCmd.Code
+			}
+			mergeCommands(parentCmd, childCmd)
+		} else {
+			// Add new command from child
+			parent.Children[name] = childCmd
+		}
+	}
 }
 
 func listCommands(cmd *Command, prefix string) {
@@ -251,28 +297,42 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Determine which file to read
-	var markdownFile string
+	// Determine which files to read
+	var qwerFiles []string
+	var err error
+
 	if *fileFlag != "" {
-		markdownFile = *fileFlag
+		// If a specific file is provided, use only that file
+		qwerFiles = []string{*fileFlag}
 	} else {
-		// Search for QWER.md or qwer.md recursively up to .git directory
-		var err error
-		markdownFile, err = findCommandFile()
+		// Search for QWER.md or qwer.md recursively up through parent git directories
+		qwerFiles, err = findAllCommandFiles()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	// Read markdown file
-	content, err := os.ReadFile(markdownFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", markdownFile, err)
-		os.Exit(1)
+	// Parse and merge all qwer.md files
+	root := &Command{
+		Name:     "root",
+		Children: make(map[string]*Command),
 	}
 
-	root := parseMarkdown(content)
+	for _, markdownFile := range qwerFiles {
+		// Read markdown file
+		content, err := os.ReadFile(markdownFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", markdownFile, err)
+			os.Exit(1)
+		}
+
+		// Parse the markdown file
+		fileCommands := parseMarkdown(content)
+
+		// Merge commands (later files override earlier ones)
+		mergeCommands(root, fileCommands)
+	}
 
 	// List commands if requested
 	if *listFlag {
