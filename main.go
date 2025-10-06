@@ -258,7 +258,7 @@ func listCommands(cmd *Command, prefix string) {
 		fullPath += name
 
 		if child.Code != "" {
-			fmt.Printf("  %s\n", fullPath)
+			fmt.Printf("%s\n", fullPath)
 		}
 
 		if len(child.Children) > 0 {
@@ -336,7 +336,6 @@ func main() {
 
 	// List commands if requested
 	if *listFlag {
-		fmt.Println("Available commands:")
 		listCommands(root, "")
 		os.Exit(0)
 	}
@@ -380,7 +379,6 @@ func main() {
 	}
 
 	if len(cmdArgs) == 0 {
-		fmt.Println("Available commands:")
 		listCommands(root, "")
 		os.Exit(0)
 	}
@@ -400,7 +398,6 @@ func main() {
 
 	if cmd == nil {
 		fmt.Fprintf(os.Stderr, "Command not found: %s\n", strings.Join(cmdArgs, " "))
-		fmt.Println("\nAvailable commands:")
 		listCommands(root, "")
 		os.Exit(1)
 	}
@@ -414,7 +411,6 @@ func main() {
 	if cmd.Code == "" {
 		fmt.Fprintf(os.Stderr, "No code block found for command: %s\n", strings.Join(cmdArgs[:commandPathLength], " "))
 		if len(cmd.Children) > 0 {
-			fmt.Println("\nAvailable subcommands:")
 			listCommands(cmd, strings.Join(cmdArgs[:commandPathLength], " "))
 		}
 		os.Exit(1)
