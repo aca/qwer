@@ -48,8 +48,20 @@
           buildGoApplication = gomod2nix.legacyPackages.${system}.buildGoApplication;
         in
         rec {
-          default = pkgs.buildEnv {
+          default = buildGoApplication {
             name = "qwer";
+            go = pkgs.go;
+            src = ./.;
+            pwd = ./.;
+            flags = [
+              "-trimpath"
+            ];
+            ldflags = [
+              "-s"
+              "-w"
+              "-extldflags -static"
+            ];
+            CGO_ENABLED = 0;
           };
         }
       );
