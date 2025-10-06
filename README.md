@@ -43,3 +43,10 @@ qwer echo hello world
 qwer echo2 hello world
 qwer echo2 sub hello world
 ```
+
+
+## nix
+
+```
+nix --extra-experimental-features "nix-command flakes" run github:aca/qwer -- --list
+```
