@@ -49,7 +49,6 @@ fuzzy match is supported:
 qwer e2 hello world
 ```
 
-
 ## nix
 
 ```
