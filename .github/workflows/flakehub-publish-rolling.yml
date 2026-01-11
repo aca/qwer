@@ -17,7 +17,7 @@ jobs:
       - uses: "DeterminateSystems/flakehub-push@main"
         with:
           name: "aca/qwer"
-          rolling: true
+          # rolling: true
           visibility: "public"
           include-output-paths: true
           tag: "latest"
