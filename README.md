@@ -44,6 +44,11 @@ qwer echo2 hello world
 qwer echo2 sub hello world
 ```
 
+fuzzy match is supported:
+```
+qwer e2 hello world
+```
+
 
 ## nix
 
