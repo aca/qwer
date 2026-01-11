@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/spf13/pflag"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -117,7 +118,18 @@ func findCommand(root *Command, args []string) *Command {
 		if cmd, ok := current.Children[arg]; ok {
 			current = cmd
 		} else {
-			return nil
+			// Try fuzzy match
+			var childNames []string
+			for name := range current.Children {
+				childNames = append(childNames, name)
+			}
+			matches := fuzzy.Find(arg, childNames)
+			if len(matches) == 1 {
+				current = current.Children[matches[0]]
+			} else {
+				// 0 matches or 2+ matches: don't run anything
+				return nil
+			}
 		}
 	}
 	return current
