@@ -3,39 +3,29 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/master";
-    gomod2nix = {
-      url = "github:nix-community/gomod2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    gitignore = {
-      url = "github:hercules-ci/gitignore.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      gomod2nix,
-      gitignore,
     }:
     let
-      allSystems = [
-        "x86_64-linux" # 64-bit Intel/AMD Linux
-        "aarch64-linux" # 64-bit ARM Linux
-        "x86_64-darwin" # 64-bit Intel macOS
-        "aarch64-darwin" # 64-bit ARM macOS
-      ];
+      # nix system -> zig target; dist/qwer-<system> is built by ./dist.sh.
+      zigTargets = {
+        x86_64-linux = "x86_64-linux-musl";
+        aarch64-darwin = "aarch64-macos";
+      };
       forAllSystems =
         f:
-        nixpkgs.lib.genAttrs allSystems (
+        nixpkgs.lib.genAttrs (builtins.attrNames zigTargets) (
           system:
           f {
             inherit system;
             pkgs = import nixpkgs { inherit system; };
           }
         );
+      version = "0.1.0";
     in
     {
       packages = forAllSystems (
@@ -45,23 +35,48 @@
           ...
         }:
         let
-          buildGoApplication = gomod2nix.legacyPackages.${system}.buildGoApplication;
+          # Zig package dir for `zig build --system`; entries are named by the
+          # hashes in build.zig.zon.
+          zigDeps = pkgs.linkFarm "qwer-zig-deps" [
+            {
+              name = "N-V-__8AAOdBEgAyOZrfIS_QwIGQaghYMBYfIPhZb5j3fANV";
+              path = pkgs.fetchFromGitHub {
+                owner = "mity";
+                repo = "md4c";
+                rev = "d61477642dab7cf9efaa30b0b1795a9dc3f02fb0";
+                hash = "sha256-xfm72/zXQvc2Skjh1YTn8flyqESY4OugIUcomJvy3fY=";
+              };
+            }
+          ];
         in
-        rec {
-          default = buildGoApplication {
-            name = "qwer";
-            go = pkgs.go;
-            src = ./.;
-            pwd = ./.;
-            flags = [
-              "-trimpath"
+        {
+          # Prebuilt binary committed in dist/.
+          default = pkgs.runCommand "qwer-${version}" { meta.mainProgram = "qwer"; } ''
+            install -Dm755 ${./dist + "/qwer-${system}"} $out/bin/qwer
+          '';
+
+          # Same build as dist.sh, from source.
+          source = pkgs.stdenvNoCC.mkDerivation {
+            pname = "qwer";
+            inherit version;
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                ./build.zig
+                ./build.zig.zon
+                ./src
+              ];
+            };
+            nativeBuildInputs = [ pkgs.zig_0_17.hook ];
+            dontSetZigDefaultFlags = true;
+            zigBuildFlags = [
+              "-Dcpu=baseline"
+              "-Doptimize=ReleaseSmall"
+              "-Dtarget=${zigTargets.${system}}"
+              "--system"
+              "${zigDeps}"
             ];
-            ldflags = [
-              "-s"
-              "-w"
-              "-extldflags -static"
-            ];
-            CGO_ENABLED = 0;
+            meta.mainProgram = "qwer";
           };
         }
       );
@@ -73,10 +88,7 @@
           pkgs,
         }:
         pkgs.mkShell {
-          buildInputs = with pkgs; [
-            go
-            gomod2nix.legacyPackages.${system}.gomod2nix
-          ];
+          buildInputs = [ pkgs.zig_0_17 ];
         }
       );
 

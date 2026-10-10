@@ -1,0 +1,17 @@
+.{
+    .name = .qwer,
+    .version = "0.1.0",
+    .fingerprint = 0x5f8e9c2f5a5ba30,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .md4c = .{
+            .url = "git+https://github.com/mity/md4c#d61477642dab7cf9efaa30b0b1795a9dc3f02fb0",
+            .hash = "N-V-__8AAOdBEgAyOZrfIS_QwIGQaghYMBYfIPhZb5j3fANV",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -1,3 +1,7 @@
+// Command qwer is the original Go implementation of qwer.
+//
+// Deprecated: superseded by the Zig implementation in the repository root
+// (build.zig, src/main.zig). Kept for reference only.
 package main
 
 import (
@@ -45,8 +49,11 @@ func walkAST(n ast.Node, source []byte, root *Command, commandStack *[]*Command,
 		case *ast.Heading:
 			content := extractText(v, source)
 
-			// Skip h1 headings (level 1) as they are just section titles
+			// Skip h1 headings (level 1) as they are just section titles.
+			// Reset lastHeading so a code block under an h1 doesn't attach
+			// to the previous command.
 			if v.Level == 1 {
+				*lastHeading = nil
 				continue
 			}
 
@@ -72,20 +79,9 @@ func walkAST(n ast.Node, source []byte, root *Command, commandStack *[]*Command,
 			*commandStack = append(*commandStack, cmd)
 			*lastHeading = cmd
 
-		case *ast.FencedCodeBlock:
+		case *ast.FencedCodeBlock, *ast.CodeBlock:
 			if *lastHeading != nil {
-				lines := v.Lines()
-				var code bytes.Buffer
-				for i := 0; i < lines.Len(); i++ {
-					line := lines.At(i)
-					code.Write(line.Value(source))
-				}
-				(*lastHeading).Code = strings.TrimSpace(code.String())
-			}
-
-		case *ast.CodeBlock:
-			if *lastHeading != nil {
-				lines := v.Lines()
+				lines := child.Lines()
 				var code bytes.Buffer
 				for i := 0; i < lines.Len(); i++ {
 					line := lines.At(i)
@@ -185,7 +181,9 @@ func findAllCommandFiles() ([]string, error) {
 	var qwerFiles []string
 	dir := currentDir
 
-	// Find all qwer.md files from current directory up to git root
+	// Find all qwer.md files from current directory up to the git root
+	// (first directory containing .git), or the filesystem root if not
+	// inside a git repository.
 	for {
 		// Check for QWER.md first, then qwer.md
 		qwerPath := filepath.Join(dir, "QWER.md")
@@ -198,37 +196,16 @@ func findAllCommandFiles() ([]string, error) {
 			}
 		}
 
-		// Check if we've reached a git root
-		gitPath := filepath.Join(dir, ".git")
-		if _, err := os.Stat(gitPath); err == nil {
-			// Found .git directory, but continue searching parent directories
-			// in case we're in a nested git repository
+		// Stop at the git root
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			break
 		}
 
-		// Move to parent directory
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			// Reached filesystem root
 			break
 		}
-
-		// Check if parent directory is also a git repo
-		parentGitPath := filepath.Join(parent, ".git")
-		if _, err := os.Stat(parentGitPath); err == nil {
-			// Parent is a git repo, check for qwer.md there too
-			parentQwerPath := filepath.Join(parent, "QWER.md")
-			if _, err := os.Stat(parentQwerPath); err == nil {
-				qwerFiles = append(qwerFiles, parentQwerPath)
-			} else {
-				parentQwerLowerPath := filepath.Join(parent, "qwer.md")
-				if _, err := os.Stat(parentQwerLowerPath); err == nil {
-					qwerFiles = append(qwerFiles, parentQwerLowerPath)
-				}
-			}
-			// Stop after checking parent git repo
-			break
-		}
-
 		dir = parent
 	}
 
@@ -285,27 +262,66 @@ func main() {
 	fileFlag := pflag.StringP("file", "f", "", "Markdown file to read commands from")
 	helpFlag := pflag.BoolP("help", "h", false, "Show help")
 
-	// Parse flags but stop at -- to allow passing args to commands
-	pflag.Parse()
+	// Split args at "--": everything after it is passed to the script
+	// verbatim and never parsed as flags or command names.
+	argv := os.Args[1:]
+	var extraArgs []string
+	for i, arg := range argv {
+		if arg == "--" {
+			extraArgs = argv[i+1:]
+			argv = argv[:i]
+			break
+		}
+	}
+	pflag.CommandLine.Parse(argv)
 
 	// Show help
 	if *helpFlag {
-		fmt.Println("Markdown Command Runner")
-		fmt.Println("\nUsage:")
-		fmt.Println("  qwer [command] [subcommand...]         Run a command")
-		fmt.Println("  qwer [command] -- [args...]            Run command with arguments")
-		fmt.Println("  qwer --list                             List all available commands")
-		fmt.Println("  qwer --file FILE [command]              Use a specific markdown file")
-		fmt.Println("\nDefault file priority:")
-		fmt.Println("  1. QWER.md")
-		fmt.Println("  2. qwer.md")
-		fmt.Println("\nFlags:")
+		fmt.Println(`qwer - markdown-defined command runner (alternative to make, just, xc)
+
+qwer reads commands from a markdown file (QWER.md or qwer.md) and runs them.
+Each "## heading" defines a command; its fenced code block is the script.
+A "### heading" nested under it defines a subcommand. Scripts run with
+"#!/usr/bin/env bash" by default, or any interpreter via a shebang line.
+
+Usage:
+  qwer                                   List all available commands
+  qwer [command] [subcommand...]         Run a command
+  qwer [command] [args...]               Extra args are passed to the script ("$@")
+  qwer --list                            List all available commands
+  qwer --file FILE [command]             Use a specific markdown file
+
+Command file:
+  QWER.md is preferred over qwer.md. Files are searched from the current
+  directory up to the git repository root (or the filesystem root when not
+  in a git repo); commands in nested files override parent ones.
+
+  Example QWER.md:
+    ## build
+    ` + "```" + `
+    go build ./...
+    ` + "```" + `
+
+    ## deploy
+    ### prod
+    ` + "```" + `
+    #!/usr/bin/env python3
+    print("deploying prod")
+    ` + "```" + `
+
+  This defines commands "build" and "deploy prod".
+
+Command names are the heading text lowercased with spaces replaced by "-".
+Fuzzy matching is supported: "qwer bld" runs "build" if it is the only match.
+
+Flags:`)
 		pflag.PrintDefaults()
-		fmt.Println("\nExamples:")
-		fmt.Println("  qwer hello world")
-		fmt.Println("  qwer test -- --verbose")
-		fmt.Println("  qwer scripts bash -- arg1 arg2")
-		fmt.Println("  qwer --file docs.md build")
+		fmt.Println(`
+Examples:
+  qwer build
+  qwer deploy prod
+  qwer test -- --verbose
+  qwer --file docs.md build`)
 		os.Exit(0)
 	}
 
@@ -352,43 +368,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Find where -- appears in the original arguments
-	dashDashIndex := -1
-	for i, arg := range os.Args[1:] { // Skip program name
-		if arg == "--" {
-			dashDashIndex = i
-			break
-		}
-	}
-
-	// pflag.Args() returns all non-flag arguments (with -- removed)
-	allArgs := pflag.Args()
-
-	var cmdArgs []string
-	var extraArgs []string
-
-	if dashDashIndex == -1 {
-		// No -- found, all args are command args
-		cmdArgs = allArgs
-	} else {
-		// Count how many non-flag args come before --
-		nonFlagCount := 0
-		for i := 1; i <= dashDashIndex; i++ {
-			arg := os.Args[i]
-			// Skip flags (start with -)
-			if !strings.HasPrefix(arg, "-") {
-				nonFlagCount++
-			}
-		}
-
-		// Split pflag.Args() based on the count
-		if nonFlagCount <= len(allArgs) {
-			cmdArgs = allArgs[:nonFlagCount]
-			extraArgs = allArgs[nonFlagCount:]
-		} else {
-			cmdArgs = allArgs
-		}
-	}
+	// Non-flag arguments before "--" form the command path
+	cmdArgs := pflag.Args()
 
 	if len(cmdArgs) == 0 {
 		listCommands(root, "")

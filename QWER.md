@@ -9,6 +9,7 @@ echo echo "$@"
 
 ## echo2
 script can be written in any language supported by shebang
+
 ```
 #!/usr/bin/env -S deno run -A
 console.log("echo2", Deno.args);

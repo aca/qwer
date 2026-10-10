@@ -1,2 +1,6 @@
 /qwer
+/go/qwer
 /result
+/zig-out
+/.zig-cache
+/zig-pkg
